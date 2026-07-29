@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: spring-batch-demo
+
+  datasource:
+    url: jdbc:h2:mem:batchdemo;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  sql:
+    init:
+      mode: always # run schema.sql on every startup (fresh in-memory DB each time)
+
+  batch:
+    jdbc:
+      initialize-schema: always # let Spring Batch create its own BATCH_* metadata tables
+    job:
+      enabled: true # run the Job automatically on application startup
+
+logging:
+  level:
+    com.example.batchdemo: DEBUG
+    org.springframework.batch: INFO

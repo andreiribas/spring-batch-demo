@@ -1,0 +1,137 @@
+package com.example.batchdemo.config;
+
+import com.example.batchdemo.domain.Person;
+import com.example.batchdemo.job.PersonItemProcessor;
+import com.example.batchdemo.listener.CsvStepSkipListener;
+import com.example.batchdemo.listener.JobCompletionNotificationListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.batch.core.job.Job;
+import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.step.Step;
+import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.infrastructure.item.ItemProcessor;
+import org.springframework.batch.infrastructure.item.ItemWriter;
+import org.springframework.batch.infrastructure.item.database.JdbcBatchItemWriter;
+import org.springframework.batch.infrastructure.item.database.builder.JdbcBatchItemWriterBuilder;
+import org.springframework.batch.infrastructure.item.file.FlatFileItemReader;
+import org.springframework.batch.infrastructure.item.file.FlatFileParseException;
+import org.springframework.batch.infrastructure.item.file.builder.FlatFileItemReaderBuilder;
+import org.springframework.batch.infrastructure.item.file.mapping.BeanWrapperFieldSetMapper;
+import org.springframework.batch.infrastructure.repeat.RepeatStatus;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.Resource;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+
+import javax.sql.DataSource;
+
+/**
+ * Wires together a single Job made of three Steps, to showcase the most
+ * common Spring Batch building blocks:
+ *
+ *   1. helloStep      - a Tasklet step (simple, non chunk-oriented work)
+ *   2. importPeopleStep - a chunk-oriented step: reader -> processor -> writer,
+ *                          with fault tolerance (skip) turned on
+ *   3. summaryStep    - another Tasklet step that reports on what was written
+ *
+ * Steps are chained with .next(), so the job only proceeds if the previous
+ * step completed successfully.
+ */
+@Configuration
+public class BatchConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(BatchConfig.class);
+
+    // ---- Step 1: Tasklet ---------------------------------------------------
+
+    @Bean
+    public Step helloStep(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
+        return new StepBuilder("helloStep", jobRepository)
+                .tasklet((contribution, chunkContext) -> {
+                    log.info("Hello from a Tasklet step! Kicking off the person import...");
+                    return RepeatStatus.FINISHED;
+                }, transactionManager)
+                .build();
+    }
+
+    // ---- Step 2: Chunk-oriented (reader / processor / writer) --------------
+
+    @Bean
+    public FlatFileItemReader<Person> personItemReader(@Value("classpath:people.csv") Resource resource) {
+        return new FlatFileItemReaderBuilder<Person>()
+                .name("personItemReader")
+                .resource(resource)
+                .linesToSkip(1) // skip the CSV header
+                .delimited()
+                .names("firstName", "lastName")
+                .fieldSetMapper(new BeanWrapperFieldSetMapper<>() {{
+                    setTargetType(Person.class);
+                }})
+                .build();
+    }
+
+    @Bean
+    public ItemProcessor<Person, Person> personItemProcessor() {
+        return new PersonItemProcessor();
+    }
+
+    @Bean
+    public JdbcBatchItemWriter<Person> personItemWriter(DataSource dataSource) {
+        return new JdbcBatchItemWriterBuilder<Person>()
+                .dataSource(dataSource)
+                .sql("INSERT INTO people (first_name, last_name) VALUES (:firstName, :lastName)")
+                .beanMapped()
+                .build();
+    }
+
+    @Bean
+    public Step importPeopleStep(JobRepository jobRepository,
+                                  PlatformTransactionManager transactionManager,
+                                  FlatFileItemReader<Person> personItemReader,
+                                  ItemProcessor<Person, Person> personItemProcessor,
+                                  ItemWriter<Person> personItemWriter,
+                                  CsvStepSkipListener csvStepSkipListener) {
+        return new StepBuilder("importPeopleStep", jobRepository)
+                .<Person, Person>chunk(3) // commit every 3 items
+                .reader(personItemReader)
+                .processor(personItemProcessor)
+                .writer(personItemWriter)
+                .faultTolerant()
+                .skipLimit(2)
+                .skip(FlatFileParseException.class) // tolerate a couple of malformed lines
+                .listener(csvStepSkipListener)
+                .build();
+    }
+
+    // ---- Step 3: Tasklet that reports a summary -----------------------------
+
+    @Bean
+    public Step summaryStep(JobRepository jobRepository,
+                             PlatformTransactionManager transactionManager,
+                             JdbcTemplate jdbcTemplate) {
+        return new StepBuilder("summaryStep", jobRepository)
+                .tasklet((contribution, chunkContext) -> {
+                    Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM people", Integer.class);
+                    log.info("Summary step: {} people currently stored in the database.", count);
+                    return RepeatStatus.FINISHED;
+                }, transactionManager)
+                .build();
+    }
+
+    // ---- The Job: chains the three steps in order ---------------------------
+
+    @Bean
+    public Job importPersonJob(JobRepository jobRepository, Step helloStep, Step importPeopleStep, Step summaryStep,
+                                JobCompletionNotificationListener jobCompletionNotificationListener) {
+        return new JobBuilder("importPersonJob", jobRepository)
+                .start(helloStep)
+                .next(importPeopleStep)
+                .next(summaryStep)
+                .listener(jobCompletionNotificationListener)
+                .build();
+    }
+}
