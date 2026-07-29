@@ -19,12 +19,17 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.sql.ResultSet;
 import java.util.List;
 
+import org.mockito.ArgumentCaptor;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -114,5 +119,23 @@ class JobTriggerControllerTest {
         mockMvc.perform(get("/jobs/debug"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("execId=1 instanceId=1 status=COMPLETED")));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void debug_rowMapperFormatsResultSetColumnsAsExpected() throws Exception {
+        ArgumentCaptor<RowMapper<String>> rowMapperCaptor = ArgumentCaptor.forClass(RowMapper.class);
+        when(jdbcTemplate.query(anyString(), rowMapperCaptor.capture())).thenReturn(List.of());
+
+        mockMvc.perform(get("/jobs/debug")).andExpect(status().isOk());
+
+        ResultSet resultSet = mock(ResultSet.class);
+        when(resultSet.getString(1)).thenReturn("10");
+        when(resultSet.getString(2)).thenReturn("20");
+        when(resultSet.getString(3)).thenReturn("COMPLETED");
+
+        String mapped = rowMapperCaptor.getValue().mapRow(resultSet, 0);
+
+        assertThat(mapped).isEqualTo("execId=10 instanceId=20 status=COMPLETED");
     }
 }

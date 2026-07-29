@@ -36,7 +36,7 @@ class ImportPersonJobIntegrationTest {
         assertThat(jobExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
 
         Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM people", Integer.class);
-        // 7 valid rows in people.csv, 1 malformed row is skipped
-        assertThat(count).isEqualTo(7);
+        // 200 valid rows in people.csv, 1 malformed row is skipped
+        assertThat(count).isEqualTo(200);
     }
 }

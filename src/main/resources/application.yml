@@ -8,6 +8,12 @@ spring:
     username: sa
     password:
 
+  h2:
+    console:
+      enabled: true # browser console at /h2-console, connects to THIS app's live in-memory DB
+                     # (an external tool connecting to the same jdbc:h2:mem URL gets its own,
+                     # separate, empty in-memory DB - in-memory H2 is only shared within one JVM)
+
   sql:
     init:
       mode: always # run these schema scripts on every startup (fresh in-memory DB each time)
@@ -17,7 +23,11 @@ spring:
 
   batch:
     job:
-      enabled: true # run the Job automatically on application startup
+      enabled: false # don't auto-run on startup; trigger via POST /jobs/import instead
+
+  threads:
+    virtual:
+      enabled: true # use virtual threads (Project Loom) wherever Spring Boot hands out an Executor
 
 logging:
   level:

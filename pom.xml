@@ -40,6 +40,11 @@
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-h2console</artifactId>
+            <scope>runtime</scope>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -63,6 +68,65 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <!-- Keep this current with whatever JDK actually runs the build (`java -version`),
+                     not just the java.version/release compiler target above: JaCoCo's bundled ASM
+                     has to be able to parse THAT JDK's class file major version, including hidden
+                     classes it generates at runtime for indy-based string concat/lambdas - those
+                     are stamped with the running JVM's version regardless of the release target.
+                     0.8.12 couldn't parse Java 25 (major version 69); 0.8.13 fixed that but choked
+                     once this machine's JDK drifted to 26 (major version 70); 0.8.14+ fixed that. -->
+                <version>0.8.15</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                        <configuration>
+                            <!-- Scope the agent to just our own code. Without this it also tries
+                                 (and fails) to instrument JDK-internal classes, ByteBuddy/XML-DSig
+                                 internals, and Mockito's generated mock classes (which live in the
+                                 mocked interface's OWN package, e.g. Job$MockitoMock$... - so
+                                 excluding org.mockito.* alone doesn't catch them). All harmless,
+                                 but noisy IllegalClassFormatException stack traces; an includes
+                                 allowlist is more robust here than an ever-growing excludes list. -->
+                            <includes>
+                                <include>com.example.batchdemo.**</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.80</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
