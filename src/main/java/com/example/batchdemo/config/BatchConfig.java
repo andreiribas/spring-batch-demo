@@ -9,8 +9,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.step.Step;
 import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.infrastructure.item.ItemProcessor;
 import org.springframework.batch.infrastructure.item.ItemWriter;
 import org.springframework.batch.infrastructure.item.database.JdbcBatchItemWriter;
@@ -48,13 +50,33 @@ public class BatchConfig {
 
     // ---- Step 1: Tasklet ---------------------------------------------------
 
+    /**
+     * Basic feature: restartability driven by job parameters.
+     *
+     * {@code forceFailure} is late-bound from the job parameters via SpEL, which
+     * requires this bean to be step-scoped (resolved fresh per step execution
+     * instead of once at context startup). Launch the job with
+     * {@code forceFailure=true} to make this step throw, then relaunch with the
+     * SAME identifying parameters and {@code forceFailure=false}: Spring Batch
+     * recognizes it as a restart of the same (failed) JobInstance, re-runs only
+     * this failed step, and lets the job complete.
+     */
     @Bean
-    public Step helloStep(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
+    @StepScope
+    public Tasklet helloTasklet(@Value("#{jobParameters['forceFailure'] ?: 'false'}") String forceFailure) {
+        return (contribution, chunkContext) -> {
+            if (Boolean.parseBoolean(forceFailure)) {
+                throw new IllegalStateException("Simulated failure (forceFailure=true) - restart with forceFailure=false to recover");
+            }
+            log.info("Hello from a Tasklet step! Kicking off the person import...");
+            return RepeatStatus.FINISHED;
+        };
+    }
+
+    @Bean
+    public Step helloStep(JobRepository jobRepository, PlatformTransactionManager transactionManager, Tasklet helloTasklet) {
         return new StepBuilder("helloStep", jobRepository)
-                .tasklet((contribution, chunkContext) -> {
-                    log.info("Hello from a Tasklet step! Kicking off the person import...");
-                    return RepeatStatus.FINISHED;
-                }, transactionManager)
+                .tasklet(helloTasklet, transactionManager)
                 .build();
     }
 

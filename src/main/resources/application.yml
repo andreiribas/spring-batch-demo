@@ -10,11 +10,12 @@ spring:
 
   sql:
     init:
-      mode: always # run schema.sql on every startup (fresh in-memory DB each time)
+      mode: always # run these schema scripts on every startup (fresh in-memory DB each time)
+      schema-locations:
+        - classpath:schema.sql
+        - classpath:org/springframework/batch/core/schema-h2.sql # Spring Batch's own BATCH_* metadata tables
 
   batch:
-    jdbc:
-      initialize-schema: always # let Spring Batch create its own BATCH_* metadata tables
     job:
       enabled: true # run the Job automatically on application startup
 
